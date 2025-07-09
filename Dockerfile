@@ -45,7 +45,7 @@ RUN cp ./target/${ARCH}-unknown-linux-musl/release/sentry_tunnel /release/sentry
 #===========================#
 # Install ssl certificates  #
 #===========================#
-FROM alpine:3.14 as alpine
+FROM alpine:3.14 AS alpine
 RUN apk add -U --no-cache ca-certificates
 
 # ==========================#

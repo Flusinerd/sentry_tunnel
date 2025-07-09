@@ -75,30 +75,36 @@ mod tests {
         ))
         .unwrap();
         
-        // Session replay envelope with multiple lines (header + multiple items)
-        let json = r#"{"event_id":"65de0c6c634c4b29b63eb2af58e7bfa7","sent_at":"2025-07-09T21:52:36.839Z","sdk":{"name":"sentry.javascript.react","version":"9.24.0"},"dsn":"http://public@HOST_TEST_REPLACE/6"}
-{"type":"replay_event"}
-{"type":"replay_event","replay_start_timestamp":1752097947.846,"timestamp":1752097956.838,"error_ids":["a11c57d12066461982ff3fbb78ab0752"],"trace_ids":["836b56305ed84493a72b4a4f58cba356","c8fd251f22884313a09208497f1f3753"],"urls":["https://my.langguth.com/shop/customers/4285ff71-028d-4755-850c-090f520695b8/machines/ec19bb09-374e-4ace-ab26-2ae246f82ce9"],"replay_id":"65de0c6c634c4b29b63eb2af58e7bfa7","segment_id":0,"replay_type":"buffer","request":{"url":"https://my.langguth.com/shop/customers/4285ff71-028d-4755-850c-090f520695b8/machines/ec19bb09-374e-4ace-ab26-2ae246f82ce9","headers":{"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"}},"event_id":"65de0c6c634c4b29b63eb2af58e7bfa7","environment":"production","release":"1.9.1","sdk":{"integrations":["InboundFilters","FunctionToString","BrowserApiErrors","Breadcrumbs","GlobalHandlers","LinkedErrors","Dedupe","HttpContext","BrowserSession","BrowserTracing","Replay","RewriteFrames"],"name":"sentry.javascript.react","version":"9.24.0"},"contexts":{"react":{"version":"19.0.0"}},"transaction":"/customers/$customerId/machines/$machineId","user":{"ip_address":"{{auto}}"},"platform":"javascript"}
-{"type":"replay_recording","length":57959}
-{"segment_id":0}
-binary_data_placeholder"#;
+        // Build the envelope as bytes, with real binary data at the end
+        let header = format!(
+            "{{\"event_id\":\"65de0c6c634c4b29b63eb2af58e7bfa7\",\"sent_at\":\"2025-07-09T21:52:36.839Z\",\"sdk\":{{\"name\":\"sentry.javascript.react\",\"version\":\"9.24.0\"}},\"dsn\":\"http://public@{}/6\"}}\n",
+            server.address()
+        );
+        let item1 = b"{\"type\":\"replay_event\"}\n";
+        let item2 = b"{\"type\":\"replay_event\",\"replay_start_timestamp\":1752097947.846,\"timestamp\":1752097956.838,\"error_ids\":[\"a11c57d12066461982ff3fbb78ab0752\"],\"trace_ids\":[\"836b56305ed84493a72b4a4f58cba356\",\"c8fd251f22884313a09208497f1f3753\"],\"urls\":[\"https://my.langguth.com/shop/customers/4285ff71-028d-4755-850c-090f520695b8/machines/ec19bb09-374e-4ace-ab26-2ae246f82ce9\"],\"replay_id\":\"65de0c6c634c4b29b63eb2af58e7bfa7\",\"segment_id\":0,\"replay_type\":\"buffer\",\"request\":{\"url\":\"https://my.langguth.com/shop/customers/4285ff71-028d-4755-850c-090f520695b8/machines/ec19bb09-374e-4ace-ab26-2ae246f82ce9\",\"headers\":{\"User-Agent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36\"}},\"event_id\":\"65de0c6c634c4b29b63eb2af58e7bfa7\",\"environment\":\"production\",\"release\":\"1.9.1\",\"sdk\":{\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"BrowserApiErrors\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"Dedupe\",\"HttpContext\",\"BrowserSession\",\"BrowserTracing\",\"Replay\",\"RewriteFrames\"],\"name\":\"sentry.javascript.react\",\"version\":\"9.24.0\"},\"contexts\":{\"react\":{\"version\":\"19.0.0\"}},\"transaction\":\"/customers/$customerId/machines/$machineId\",\"user\":{\"ip_address\":\"{{auto}}\"},\"platform\":\"javascript\"}\n";
+        let item3 = b"{\"type\":\"replay_recording\",\"length\":5}\n";
+        let item4 = b"{\"segment_id\":0}\n";
+        let binary_data = [0xFF, 0xFE, 0xFD, 0x00, 0x01];
         
-        let json = json
-            .replace("HOST_TEST_REPLACE", &server.address().to_string())
-            .to_owned();
-        println!("{:?}", json);
+        let mut envelope = Vec::new();
+        envelope.extend_from_slice(header.as_bytes());
+        envelope.extend_from_slice(item1);
+        envelope.extend_from_slice(item2);
+        envelope.extend_from_slice(item3);
+        envelope.extend_from_slice(item4);
+        envelope.extend_from_slice(&binary_data);
         
         let mime = "application/json".parse::<Mime>().unwrap();
         let response = test_server
             .client()
             .post(
                 "http://localhost".to_owned() + &test_config.tunnel_path,
-                json.clone(),
+                envelope.clone(),
                 mime,
             )
             .with_header(
                 header::CONTENT_LENGTH,
-                HeaderValue::from_str(&format!("{}", json.as_bytes().len())).unwrap(),
+                HeaderValue::from_str(&format!("{}", envelope.len())).unwrap(),
             )
             .perform()
             .unwrap();

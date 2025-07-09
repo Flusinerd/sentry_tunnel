@@ -21,7 +21,7 @@ use std::str::FromStr;
  */
 #[derive(Debug)]
 pub struct SentryEnvelope {
-    pub raw_body: String,
+    pub raw_body: Vec<u8>,
     pub dsn: Dsn,
 }
 
@@ -88,10 +88,10 @@ impl SentryEnvelope {
             .method("POST")
             .body(self.raw_body.clone())?;
         info!(
-            "Sending HTTP {} {} - body={}",
+            "Sending HTTP {} {} - body length={}",
             request.method(),
             request.uri(),
-            request.body()
+            self.raw_body.len()
         );
         match request.send_async().await {
             Ok(_) => Ok(()),
@@ -100,23 +100,30 @@ impl SentryEnvelope {
     }
 
     /**
-     * Attempt to parse a string into an envelope
+     * Attempt to parse bytes into an envelope
      * Supports envelopes with varying numbers of lines (session replays, etc.)
      */
-    pub fn try_new_from_body(body: String) -> Result<SentryEnvelope, AError> {
-        if body.trim().is_empty() {
+    pub fn try_new_from_body(body: Vec<u8>) -> Result<SentryEnvelope, AError> {
+        if body.is_empty() {
             return Err(AError::new(BodyError::EmptyBody));
         }
 
-        let lines: Vec<&str> = body.lines().collect();
-        if lines.len() < 2 {
-            return Err(AError::new(BodyError::InvalidNumberOfLines));
-        }
-
+        // Find the first newline to extract the header
+        let header_end = body.iter().position(|&b| b == b'\n')
+            .ok_or_else(|| AError::new(BodyError::InvalidNumberOfLines))?;
+        
         // Parse the header (first line)
-        let header = lines[0];
-        let header: Value =
-            serde_json::from_str(header).map_err(|e| BodyError::InvalidHeaderJson(e))?;
+        let header_bytes = &body[..header_end];
+        let header_str = std::str::from_utf8(header_bytes)
+            .map_err(|_| AError::new(BodyError::InvalidHeaderJson(
+                serde_json::Error::io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Header contains invalid UTF-8"
+                ))
+            )))?;
+        
+        let header: Value = serde_json::from_str(header_str)
+            .map_err(|e| BodyError::InvalidHeaderJson(e))?;
         
         if let Some(dsn) = header.get("dsn") {
             if let Some(dsn_str) = dsn.as_str() {

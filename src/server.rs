@@ -37,7 +37,7 @@ struct TunnelConfig {
     inner: Arc<Config>,
 }
 
-fn parse_body(body: String) -> Result<SentryEnvelope, AError> {
+fn parse_body(body: Vec<u8>) -> Result<SentryEnvelope, AError> {
     SentryEnvelope::try_new_from_body(body)
 }
 
@@ -102,8 +102,7 @@ async fn tunnel_handler(state: &mut State) -> Result<Response<Body>, AError> {
     check_content_length(&headers)?;
 
     let full_body = body::to_bytes(Body::take_from(state)).await?;
-    let body_content = String::from_utf8(full_body.to_vec())?;
-    let sentry_instance = parse_body(body_content)?;
+    let sentry_instance = parse_body(full_body.to_vec())?;
 
     let config = TunnelConfig::borrow_from(state);
     let hosts = &config.inner.remote_hosts;
